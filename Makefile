@@ -300,7 +300,16 @@ clean:
 
 # board script
 BOARD_SCRIPT = st_nucleo_f4.cfg
+OPENOCD_CONFIG_PATH = board/${BOARD_SCRIPT}
+ELF_FILE = $(BUILD_DIR)/$(TARGET).elf
+
 program: all
-	openocd -f "board/$(BOARD_SCRIPT)" -c "program $(BUILD_DIR)/$(TARGET).elf verify reset exit"
+	openocd -f "$(OPENOCD_CONFIG_PATH)" -c "program $(ELF_FILE) verify reset exit"
+
+start_openocd:
+	openocd -f ${OPENOCD_CONFIG_PATH}
+
+debug:
+	arm-none-eabi-gdb "$(ELF_FILE)" -ex 'target extended-remote localhost:3333'
 
 # *** EOF ***
