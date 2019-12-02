@@ -112,6 +112,7 @@ int main(void)
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
+  connectionEnableSemaphore = xSemaphoreCreateBinary();
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
 
@@ -147,12 +148,13 @@ int main(void)
   BaseType_t syncTaskCreationResult = xTaskCreate(
       SY_TaskFunc,
       SY_TASK,
-      1024,
+      2048,
       NULL,
       1,
       &syncTask
   );
 
+  printf("hellothere\r\n");
   /* USER CODE END RTOS_THREADS */
 
   /* Start scheduler */
@@ -333,7 +335,18 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static void print_chr(char chr)
+{
+  while(__HAL_UART_GET_FLAG(&huart3, UART_FLAG_TXE) == RESET) { ; }
+  huart3.Instance->DR = (uint16_t)chr;
+}
 
+int _write(int file, char *ptr, int len) {
+  int cntr = len;
+  char *pTemp = (char*)ptr; while(cntr--)
+          print_chr(*pTemp++);
+      return len;
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -348,6 +361,7 @@ void StartDefaultTask(void *argument)
   /* init code for LWIP */
   MX_LWIP_Init();
   /* USER CODE BEGIN 5 */
+  xSemaphoreGive(connectionEnableSemaphore);
   /* Infinite loop */
   for(;;)
   {

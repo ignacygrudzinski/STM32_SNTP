@@ -26,7 +26,7 @@ if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 2137
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind((socket.gethostname(), port))
+    sock.bind(("10.0.0.2", port))
     sock.listen(1)
     while True:
         (client_socket, addr) = sock.accept()
