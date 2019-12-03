@@ -8,7 +8,7 @@ def respond(message: bytes) -> bytes:
     return b'pong'
 
 
-def handle_client(sock: socket.socket):
+def handle_client(data: bytes, addr: bytes):
     protocol = Protocol(sock)
     while True:
         try:
@@ -19,18 +19,19 @@ def handle_client(sock: socket.socket):
 
         print('Received message')
         to_send = Protocol.pad(respond(received_message))
-        protocol.send(to_send)    
+        protocol.send(to_send, addr)    
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 2137
+    server_addr = sys.argv[1] if len(sys.argv) > 2 else "127.0.0.1"
+    server_port = int(sys.argv[2]) if len(sys.argv) > 1 else 2137
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("10.0.0.2", port))
-    sock.listen(1)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((server_addr, server_port))
+    protocol = Protocol(sock)
     while True:
-        (client_socket, addr) = sock.accept()
-        print(f'Client {addr} connected')
-        handle_client(client_socket) # TODO: multiple clients support
+        data, addr = protocol.receive()
+        print(f'Client {addr} sent {data}')
+        protocol.send(data + b' generalkenobi', addr)
 
         

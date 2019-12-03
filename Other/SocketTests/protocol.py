@@ -5,7 +5,7 @@ class DisconnectionError(Exception):
 
 
 class Protocol:
-    MESSAGE_SIZE = 100
+    MESSAGE_SIZE = 32
 
     def __init__(self, socket: socket):
         self.socket = socket
@@ -16,21 +16,10 @@ class Protocol:
         padding = b' ' * padding_length
         return message + padding
 
-    def send(self, message: bytes):
-        total_sent = 0
-        while total_sent < self.MESSAGE_SIZE:
-            sent = self.socket.send(message[total_sent:])
-            if sent == 0:
-                raise DisconnectionError
-            total_sent += sent
+    def send(self, message: bytes, address):
+        self.socket.sendto(self.pad(message), 0, address)
+        
 
-    def receive(self) -> bytes:
-        chunks = []
-        total_received = 0
-        while total_received < self.MESSAGE_SIZE:
-            chunk = self.socket.recv(self.MESSAGE_SIZE - total_received)
-            if chunk == b'':
-                raise DisconnectionError
-            chunks.append(chunk)
-            total_received += len(chunk)
-        return b''.join(chunks)
+    def receive(self) -> (bytes, bytes):
+        data, addr = self.socket.recvfrom(self.MESSAGE_SIZE)
+        return data, addr
