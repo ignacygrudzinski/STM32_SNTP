@@ -32,6 +32,6 @@ if __name__ == "__main__":
     while True:
         data, addr = protocol.receive()
         print(f'Client {addr} sent {data}')
-        protocol.send(data + b' generalkenobi', addr)
+        protocol.send(b'generalkenobi\0', addr)
 
         

@@ -5,11 +5,13 @@
 #include "lwip/netdb.h"
 #include "lwip/api.h"
 #include "lwip/ip_addr.h"
+#include <stm32f4xx_hal_gpio.h>
+#include <stm32f4xx_hal_rtc.h>
 
 #include "sync.h"
 #include "signaling_diode.h"
 
-#define SNTP_ADDR "10.0.0.2"
+#define SNTP_ADDR "192.168.1.188"
 
 SemaphoreHandle_t connectionEnableSemaphore;
 
@@ -24,59 +26,70 @@ void hang() {
 void SY_TaskFunc(void* param){
         SD_SetState(CONNECTING);
         
-        // MX_LWIP_Init(); // todo: decancerify
-        // int sock;
-        // sock = socket(AF_INET, SOCK_DGRAM, 0);
-        // if (sock == -1) hang();
-
-        // int status;
-        // struct addrinfo hints;
-        // memset(&hints, 0, sizeof(hints));
-        // struct addrinfo* addr;
-        // if (getaddrinfo("10.1.1.2", "2137", &hints, &addr) != 0) {
-        //         hang();
-        // }
-
-        // if (connect(sock, addr->ai_addr, addr->ai_addrlen) != 0) {
-        //         hang();
-        // }
-
-        // SD_SetState(CONNECTED);
-
-        // for(;;) {        
-        // }
         printf("Waiting for LWIP to be initialized...");
         if (xSemaphoreTake(connectionEnableSemaphore, 30000) != pdTRUE){
                 hang();
         };
         printf(" done \r\n");
 
-        printf("Delay (TBD: do not wait here)...");
-        osDelay(30000);
-        printf(" done \r\n");
 
         struct netconn* conn;
         struct ip4_addr server_ip;
-        // server_ip.addr = 3232235908;
+        int result, send_result, recv_result;
+        u16_t recv_size;
+        char text[] = "Hello there!";
+        char* recv_data;
+        struct netbuf *sendbuf, *recvbuf;
+
         ipaddr_aton(SNTP_ADDR, &server_ip); 
         
         printf("creating new LWIP connection...");
-        conn = netconn_new(NETCONN_TCP);
+        conn = netconn_new(NETCONN_UDP);
         if (conn == NULL) {
-                printf(" error \r\n");
+                printf(" Connection error\r\n");
                 hang();
         }
         printf(" done \r\n");
 
         printf("connecting to %s...", SNTP_ADDR);
-        int conn_result = netconn_connect(conn, &server_ip, 2137);
-        if (conn_result != ERR_OK) {
-                printf(" error %d\r\n", conn_result);
+        if (result = netconn_connect(conn, &server_ip, 2137) != ERR_OK) {
+                printf(" error %d\r\n", result);
                 hang();
         }
         printf(" done \r\n");
-
         SD_SetState(CONNECTED);
+
+        sendbuf = netbuf_new();
+        netbuf_ref(sendbuf, text, sizeof(text));
+
+        while (1) {
+                if (HAL_GPIO_ReadPin(GPIOC, USER_Btn_Pin)) {
+                        printf("Synchronizing time... \r\n");
+                        send_result = netconn_send(conn, sendbuf);
+                        if (send_result != ERR_OK) {
+                                printf("Sending error %d\r\n", send_result);
+                                hang();
+                        } 
+                        printf("UDP message sent \r\n");
+                        osDelay(100);
+
+                        recv_result = netconn_recv(conn, &recvbuf);
+                        if (recv_result != ERR_OK) {
+                                printf("Receiving error %d\r\n", recv_result);
+                                hang();
+                        } 
+                        printf("UDP message recieved \r\n");
+                        netbuf_data(recvbuf, (void**) &recv_data, &recv_size);
+                        printf("size %d; message %s\r\n", recv_size, recv_data);
+                        // netconn_delete(sendbuf);
+                        netbuf_delete(recvbuf);
+                }
+
+                osDelay(200); 
+        }
+
+        /* deallocate connection and netbuf */
+        netconn_delete(conn);
 
         for(;;) {
                 osDelay(420);   
