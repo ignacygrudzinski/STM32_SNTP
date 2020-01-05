@@ -16,6 +16,7 @@
 #define SNTP_PORT 123
 
 SemaphoreHandle_t connectionEnableSemaphore;
+SemaphoreHandle_t syncSemaphore;
 extern RTC_HandleTypeDef hrtc;
 
 void hang() {
@@ -23,6 +24,10 @@ void hang() {
         for (;;) {
                 osDelay(420);
         }
+}
+
+void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin) {
+        if (GPIO_Pin == USER_Btn_Pin) xSemaphoreGiveFromISR(syncSemaphore, NULL);
 }
 
 void SY_TaskFunc(void* param){
@@ -66,7 +71,8 @@ void SY_TaskFunc(void* param){
         netbuf_ref(sendbuf, &client_sntp_frame, sizeof(client_sntp_frame));
 
         while (1) {
-                if (HAL_GPIO_ReadPin(GPIOC, USER_Btn_Pin)) {
+                if (xSemaphoreTake(syncSemaphore,  portMAX_DELAY) == pdTRUE)
+                {
                         printf("Synchronizing time... \r\n");
                         send_result = netconn_send(conn, sendbuf);
                         // HAL_RTC_GetTime

@@ -6,6 +6,7 @@
 #define SY_TASK "SYNC_TASK"
 
 extern SemaphoreHandle_t connectionEnableSemaphore;
+extern SemaphoreHandle_t syncSemaphore;
 
 void SY_TaskFunc(void* param);
 

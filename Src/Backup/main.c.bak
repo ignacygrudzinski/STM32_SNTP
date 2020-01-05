@@ -29,7 +29,6 @@
 
 #include "signaling_diode.h"
 #include "sync.h"
-#include "blink.h"
 
 /* USER CODE END Includes */
 
@@ -74,12 +73,6 @@ void StartDefaultTask(void *argument);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 extern struct netif gnetif;
-
-void HAL_RTC_AlarmAEventCallback (RTC_HandleTypeDef * hrtc) {
-        // WARINING: function called from interrupt handler
-        HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
-
-}
 /* USER CODE END 0 */
 
 /**
@@ -164,16 +157,6 @@ int main(void)
       NULL,
       2,
       &syncTask
-  );
-
-  TaskHandle_t blinkTask = NULL;
-  BaseType_t blinkTaskCreationResult = xTaskCreate(
-      BL_TaskFunc,
-      BL_TASK,
-      2048,
-      NULL,
-      3,
-      &blinkTask
   );
 
   printf("hellothere\r\n");
@@ -315,13 +298,11 @@ static void MX_RTC_Init(void)
   sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
   sAlarm.AlarmDateWeekDay = 1;
   sAlarm.Alarm = RTC_ALARM_A;
-  if (HAL_RTC_SetAlarm(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
+  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN RTC_Init 2 */
-  HAL_RTC_RegisterCallback();
-  HAL_RTC_AlarmAEventCallback(NULL);
   /* USER CODE END RTC_Init 2 */
 
 }
@@ -442,6 +423,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 

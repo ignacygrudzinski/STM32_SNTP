@@ -1,5 +1,3 @@
-#include "blink.h"
-
 #include "main.h"
 #include <string.h>
 
@@ -12,24 +10,8 @@
 #include <stm32f4xx_hal_gpio.h>
 #include <stm32f4xx_hal_rtc.h>
 
+void HAL_RTC_AlarmAEventCallback (RTC_HandleTypeDef * hrtc) {
+        // WARINING: function called from alarm handler
+        HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
 
-// 39345550 - stack overflow question XD todo: implement
-
-void BL_TaskFunc(void* param){
-        // uint8_t second = 20;
-        for(;;){
-        //         RTC_TimeTypeDef time;
-        //         RTC_DateTypeDef date;
-        //         HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
-        //         HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
-        //         if (second != time.Seconds) {
-        //                 second = time.Seconds;
-        //                 blinkDiode();
-        //         } else {
-        //                 // printf("%d %d\r\n", second, time.Seconds);
-        //         }
-        //         // printf("%d-%d-%d\r\n", date.Year, date.Month, date.Date);
-        //         // printf("%d-%d-%d-%d\r\n", time.Hours, time.Minutes, time.Seconds, time.SubSeconds);
-                osDelay(100);
-        }
 }

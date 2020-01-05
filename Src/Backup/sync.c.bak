@@ -8,19 +8,25 @@
 #include <stm32f4xx_hal_gpio.h>
 #include <stm32f4xx_hal_rtc.h>
 
+#include <time.h>
 #include "sync.h"
 #include "signaling_diode.h"
 
 #define SNTP_ADDR "192.168.0.88"
+#define SNTP_PORT 123
 
 SemaphoreHandle_t connectionEnableSemaphore;
-
+extern RTC_HandleTypeDef hrtc;
 
 void hang() {
         SD_SetState(FAILURE);
         for (;;) {
                 osDelay(420);
         }
+}
+
+void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin) {
+        if (GPIO_Pin == USER_Btn_Pin) HAL_GPIO_TogglePin(GPIOB, LD2_Pin);
 }
 
 void SY_TaskFunc(void* param){
@@ -37,7 +43,7 @@ void SY_TaskFunc(void* param){
         struct ip4_addr server_ip;
         int result, send_result, recv_result;
         u16_t recv_size;
-        char text[] = "Hello there!";
+        SNTP_Frame client_sntp_frame, server_sntp_frame;
         char* recv_data;
         struct netbuf *sendbuf, *recvbuf;
 
@@ -52,7 +58,7 @@ void SY_TaskFunc(void* param){
         printf(" done \r\n");
 
         printf("connecting to %s...", SNTP_ADDR);
-        if (result = netconn_connect(conn, &server_ip, 2137) != ERR_OK) {
+        if (result = netconn_connect(conn, &server_ip, SNTP_PORT) != ERR_OK) {
                 printf(" error %d\r\n", result);
                 hang();
         }
@@ -60,7 +66,8 @@ void SY_TaskFunc(void* param){
         SD_SetState(CONNECTED);
 
         sendbuf = netbuf_new();
-        netbuf_ref(sendbuf, text, sizeof(text));
+        client_sntp_frame.header = 3;
+        netbuf_ref(sendbuf, &client_sntp_frame, sizeof(client_sntp_frame));
 
         while (1) {
                 if (HAL_GPIO_ReadPin(GPIOC, USER_Btn_Pin)) {
@@ -80,9 +87,16 @@ void SY_TaskFunc(void* param){
                                 hang();
                         } 
                         printf("UDP message recieved \r\n");
-                        netbuf_data(recvbuf, (void**) &recv_data, &recv_size);
-                        printf("size %d; message %s\r\n", recv_size, recv_data);
-                        // netconn_delete(sendbuf);
+                        netbuf_data(recvbuf, (void**) &server_sntp_frame, &recv_size);
+
+                        RTC_DateTypeDef date;
+                        date = SNTP_TimestampToDate(server_sntp_frame.reference_timestamp);
+                        HAL_RTC_SetDate(&hrtc, &date, RTC_FORMAT_BIN);
+
+                        RTC_TimeTypeDef time;
+                        time = SNTP_TimestampToTime(server_sntp_frame.reference_timestamp);
+                        HAL_RTC_SetTime(&hrtc, &time, RTC_FORMAT_BIN);
+
                         netbuf_delete(recvbuf);
                 }
 
@@ -95,4 +109,31 @@ void SY_TaskFunc(void* param){
         for(;;) {
                 osDelay(420);   
         }
+}
+
+RTC_DateTypeDef SNTP_TimestampToDate(SNTP_Timestamp timestamp) {
+        struct tm* datetime;
+        time_t seconds_time_t = timestamp.seconds;
+        datetime = localtime(&seconds_time_t);
+
+        RTC_DateTypeDef rtc_date;
+        rtc_date.Date = datetime->tm_mday;
+        rtc_date.Month = datetime->tm_mon;
+        rtc_date.Year = datetime->tm_year % 100;
+        rtc_date.WeekDay = datetime->tm_wday;
+        return rtc_date;
+}
+
+RTC_TimeTypeDef SNTP_TimestampToTime(SNTP_Timestamp timestamp) {
+        struct tm* datetime;
+        time_t seconds_time_t = timestamp.seconds;
+        datetime = localtime(&seconds_time_t);
+
+        RTC_TimeTypeDef rtc_time;
+        rtc_time.Hours = datetime->tm_hour;
+        rtc_time.Minutes = datetime->tm_min;
+        rtc_time.Seconds = datetime->tm_sec;
+        rtc_time.SubSeconds = timestamp.seconds_fraction;
+        rtc_time.SecondFraction = 0xFFFFFFFF;
+        return rtc_time;
 }
