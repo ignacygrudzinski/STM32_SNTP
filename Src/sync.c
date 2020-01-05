@@ -11,7 +11,7 @@
 #include "sync.h"
 #include "signaling_diode.h"
 
-#define SNTP_ADDR "192.168.1.188"
+#define SNTP_ADDR "192.168.0.88"
 
 SemaphoreHandle_t connectionEnableSemaphore;
 
@@ -66,6 +66,7 @@ void SY_TaskFunc(void* param){
                 if (HAL_GPIO_ReadPin(GPIOC, USER_Btn_Pin)) {
                         printf("Synchronizing time... \r\n");
                         send_result = netconn_send(conn, sendbuf);
+                        // HAL_RTC_GetTime
                         if (send_result != ERR_OK) {
                                 printf("Sending error %d\r\n", send_result);
                                 hang();

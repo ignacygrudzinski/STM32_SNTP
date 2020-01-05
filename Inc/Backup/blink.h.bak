@@ -1,0 +1,11 @@
+#ifndef __BLINK_H
+#define __BLINK_H
+
+
+#define BL_TASK "BLINK_TASK"
+
+void BL_TaskFunc(void* param);
+
+
+
+#endif
