@@ -28,6 +28,7 @@ void hang() {
 
 void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin) {
         if (GPIO_Pin == USER_Btn_Pin) xSemaphoreGiveFromISR(syncSemaphore, NULL);
+        printf("nigga \t %d\r\n",GPIO_Pin );
 }
 
 void SY_TaskFunc(void* param){
@@ -71,7 +72,7 @@ void SY_TaskFunc(void* param){
         netbuf_ref(sendbuf, &client_sntp_frame, sizeof(client_sntp_frame));
 
         while (1) {
-                if (xSemaphoreTake(syncSemaphore,  portMAX_DELAY) == pdTRUE)
+                if (xSemaphoreTake(syncSemaphore, portMAX_DELAY) == pdTRUE)
                 {
                         printf("Synchronizing time... \r\n");
                         send_result = netconn_send(conn, sendbuf);
@@ -91,13 +92,12 @@ void SY_TaskFunc(void* param){
                         printf("UDP message recieved \r\n");
                         netbuf_data(recvbuf, (void**) &server_sntp_frame, &recv_size);
 
-                        RTC_DateTypeDef date;
-                        date = SNTP_TimestampToDate(server_sntp_frame.reference_timestamp);
-                        HAL_RTC_SetDate(&hrtc, &date, RTC_FORMAT_BIN);
-
-                        RTC_TimeTypeDef time;
-                        time = SNTP_TimestampToTime(server_sntp_frame.reference_timestamp);
+                        RTC_DateTypeDef date = {0};
+                        SNTP_TimestampToDate(&server_sntp_frame.reference_timestamp, &date);
+                        RTC_TimeTypeDef time = {0};
+                        SNTP_TimestampToTime(&server_sntp_frame.reference_timestamp, &time);
                         HAL_RTC_SetTime(&hrtc, &time, RTC_FORMAT_BIN);
+                        HAL_RTC_SetDate(&hrtc, &date, RTC_FORMAT_BIN);
 
                         netbuf_delete(recvbuf);
                 }
@@ -113,29 +113,26 @@ void SY_TaskFunc(void* param){
         }
 }
 
-RTC_DateTypeDef SNTP_TimestampToDate(SNTP_Timestamp timestamp) {
-        struct tm* datetime;
-        time_t seconds_time_t = timestamp.seconds;
-        datetime = localtime(&seconds_time_t);
+void SNTP_TimestampToTime(SNTP_Timestamp *timestamp, RTC_TimeTypeDef *rtc_time) {
+        struct tm datetime;
+        time_t seconds_time_t = timestamp->seconds;
+        localtime_r(&seconds_time_t, &datetime);
 
-        RTC_DateTypeDef rtc_date;
-        rtc_date.Date = datetime->tm_mday;
-        rtc_date.Month = datetime->tm_mon;
-        rtc_date.Year = datetime->tm_year % 100;
-        rtc_date.WeekDay = datetime->tm_wday;
-        return rtc_date;
+        rtc_time->Hours = datetime.tm_hour;
+        rtc_time->Minutes = datetime.tm_min;
+        rtc_time->Seconds = datetime.tm_sec;
+        rtc_time->SubSeconds = timestamp->seconds_fraction;
+        rtc_time->SecondFraction = 0xFFFFFFFF;
 }
 
-RTC_TimeTypeDef SNTP_TimestampToTime(SNTP_Timestamp timestamp) {
-        struct tm* datetime;
-        time_t seconds_time_t = timestamp.seconds;
-        datetime = localtime(&seconds_time_t);
+void SNTP_TimestampToDate(SNTP_Timestamp *timestamp, RTC_DateTypeDef *rtc_date) {
+        struct tm datetime;
+        time_t seconds_time_t = timestamp->seconds;
+        localtime_r(&seconds_time_t, &datetime);
 
-        RTC_TimeTypeDef rtc_time;
-        rtc_time.Hours = datetime->tm_hour;
-        rtc_time.Minutes = datetime->tm_min;
-        rtc_time.Seconds = datetime->tm_sec;
-        rtc_time.SubSeconds = timestamp.seconds_fraction;
-        rtc_time.SecondFraction = 0xFFFFFFFF;
-        return rtc_time;
+        rtc_date->Date = datetime.tm_mday;
+        rtc_date->Month = datetime.tm_mon;
+        rtc_date->Year = datetime.tm_year % 100;
+        rtc_date->WeekDay = datetime.tm_wday;
 }
+

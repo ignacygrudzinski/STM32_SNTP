@@ -29,7 +29,7 @@ typedef struct {
         SNTP_Timestamp transit_timestamp;
 } SNTP_Frame;
 
-RTC_DateTypeDef SNTP_TimestampToDate(SNTP_Timestamp timestamp);
-RTC_TimeTypeDef SNTP_TimestampToTime(SNTP_Timestamp timestamp);
+void SNTP_TimestampToTime(SNTP_Timestamp *timestamp, RTC_TimeTypeDef *rtc_time);
+void SNTP_TimestampToDate(SNTP_Timestamp *timestamp, RTC_DateTypeDef *rtc_date);
 
 #endif
