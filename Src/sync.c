@@ -28,7 +28,6 @@ void hang() {
 
 void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin) {
         if (GPIO_Pin == USER_Btn_Pin) xSemaphoreGiveFromISR(syncSemaphore, NULL);
-        printf("nigga \t %d\r\n",GPIO_Pin );
 }
 
 void SY_TaskFunc(void* param){
