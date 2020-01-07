@@ -51,8 +51,10 @@ void SY_TaskFunc(void *param){
                 if (xSemaphoreTake(syncSemaphore, 100) == pdTRUE)
                 {
                         Sync(conn);
+                        debug_only(PrintCurrentTime());
+
                 }
-                debug_only(PrintCurrentTime());
+                //debug_only(PrintCurrentTime());
         }
 }
 
@@ -94,10 +96,11 @@ void SNTP_TimestampToDate(SNTP_Timestamp *timestamp, RTC_DateTypeDef *rtc_date) 
         time_t seconds_time_t = timestamp->seconds - SNTP_UNIX_TIMESTAMP_DIFF;
         localtime_r(&seconds_time_t, &datetime);
 
+        debug_only(printf("yer: %d\r\n", datetime.tm_year));
+
         rtc_date->Date = datetime.tm_mday;
-        rtc_date->Month = datetime.tm_mon;
+        rtc_date->Month = datetime.tm_mon + 1;
         rtc_date->Year = datetime.tm_year % 100;
-        rtc_date->WeekDay = datetime.tm_wday;
 }
 
 int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn) {
@@ -162,20 +165,33 @@ void PrintCurrentTime() {
 }
 
 void LocalDateTimeToSNTP(SNTP_Timestamp *sntp_time, RTC_DateTypeDef *rtc_date, RTC_TimeTypeDef *rtc_time){
-        struct tm datetime;
+        struct tm datetime0 = {0};
+        datetime0.tm_year = 1970;
+        datetime0.tm_mon = 0;
+        datetime0.tm_mday = 0;
+        datetime0.tm_hour = 0;
+        datetime0.tm_min = 0;
+        datetime0.tm_sec = 0;
+        time_t bsOrigin = mktime(&datetime0);
+
+
+        struct tm datetime = {0};
         //not Y2.1K compliant:
-        datetime.tm_year = 2000 + rtc_date->Year;
-        datetime.tm_mon = rtc_date->Month;
+        datetime.tm_year = rtc_date->Year + 2000;
+        datetime.tm_mon = rtc_date->Month - 1;
         datetime.tm_mday = rtc_date->Date;
-        datetime.tm_hour = 0;
-        datetime.tm_min = 0;
-        datetime.tm_sec = 0;
-        time_t unixDate = mktime(&datetime);
+        datetime.tm_hour = rtc_time->Hours;
+        datetime.tm_min = rtc_time->Minutes;
+        datetime.tm_sec = rtc_time->Seconds;
+        time_t unixDate = mktime(&datetime) - TIME_H_DIFF;
         sntp_time->seconds = unixDate + SNTP_UNIX_TIMESTAMP_DIFF;
-        sntp_time->seconds += 3600 * rtc_time->Hours;
-        sntp_time->seconds += 60 * rtc_time->Minutes;
-        sntp_time->seconds += 1 * rtc_time->Seconds;
-        sntp_time->seconds_fraction = rtc_time->SubSeconds << (32 - SNTP_SECONDS_FRACTION_SHIFT);
+        // sntp_time->seconds_fraction = rtc_time->SubSeconds << (32 - SNTP_SECONDS_FRACTION_SHIFT);
+        printf("unix time %lu\r\n", sizeof(unixDate));
+
+        struct tm datetime2;
+        localtime_r(&unixDate, &datetime2);
+        printf("date %d-%d-%d %d:%d:%d\r\n", datetime.tm_mday, datetime.tm_mon, datetime.tm_year, datetime.tm_hour, datetime.tm_min, datetime.tm_sec);
+        printf("converted date %d-%d-%d %d:%d:%d\r\n", datetime2.tm_mday, datetime2.tm_mon, datetime2.tm_year, datetime2.tm_hour, datetime2.tm_min, datetime2.tm_sec);
 }
 
 void SNTP_Timestamps_Add(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
@@ -199,7 +215,7 @@ void SNTP_Timestamps_Subtract(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
 }
 
 void Sync(struct netconn* conn) {
-        SNTP_Timestamp sntp_time, rtc_time;
+        SNTP_Timestamp sntp_time, rtc_time = {0};
         uint32_t sntp_subseconds;
         uint32_t sntp_subseconds_day, rtc_subseconds_day;
         int32_t shift;
@@ -207,12 +223,16 @@ void Sync(struct netconn* conn) {
         RTC_TimeTypeDef rtc_time_in_rtc_format;
 
         SNTP_GetTime(&sntp_time, conn);
-        HAL_RTC_GetDate(&hrtc, &rtc_date_in_rtc_format, RTC_FORMAT_BIN);
         HAL_RTC_GetTime(&hrtc, &rtc_time_in_rtc_format, RTC_FORMAT_BIN);
+        HAL_RTC_GetDate(&hrtc, &rtc_date_in_rtc_format, RTC_FORMAT_BIN);
         LocalDateTimeToSNTP(&rtc_time, &rtc_date_in_rtc_format, &rtc_time_in_rtc_format);
-        SNTP_Timestamps_Subtract(&sntp_time, &rtc_time);
+        // SNTP_Timestamps_Subtract(&sntp_time, &rtc_time);
 
-        printf("%lu %lu\r\n", sntp_time.seconds, sntp_time.seconds_fraction);
+        //delete lateor
+        printf("SNTP: %lu %lu\r\n", sntp_time.seconds, sntp_time.seconds_fraction);
+        printf("RTC: %lu %lu\r\n", rtc_time.seconds, rtc_time.seconds_fraction);
+        printf("Diff: %lu %lu\r\n", sntp_time.seconds - rtc_time.seconds, sntp_time.seconds_fraction - rtc_time.seconds_fraction);
+
         
 
         // rtc_subseconds_day = rtc_time.SubSeconds
