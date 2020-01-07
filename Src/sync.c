@@ -51,10 +51,10 @@ void SY_TaskFunc(void *param){
                 if (xSemaphoreTake(syncSemaphore, 100) == pdTRUE)
                 {
                         Sync(conn);
-                        debug_only(PrintCurrentTime());
+                        // debug_only(PrintCurrentTime());
 
                 }
-                //debug_only(PrintCurrentTime());
+                debug_only(PrintCurrentTime());
         }
 }
 
@@ -93,7 +93,7 @@ void SNTP_TimestampToSubSeconds(SNTP_Timestamp *timestamp, uint32_t *subseconds)
 
 void SNTP_TimestampToDate(SNTP_Timestamp *timestamp, RTC_DateTypeDef *rtc_date) {
         struct tm datetime;
-        time_t seconds_time_t = timestamp->seconds - SNTP_UNIX_TIMESTAMP_DIFF;
+        time_t seconds_time_t = timestamp->seconds - SNTP_UNIX_TIMESTAMP_DIFF + TIME_H_DIFF;
         localtime_r(&seconds_time_t, &datetime);
 
         debug_only(printf("yer: %d\r\n", datetime.tm_year));
@@ -165,16 +165,6 @@ void PrintCurrentTime() {
 }
 
 void LocalDateTimeToSNTP(SNTP_Timestamp *sntp_time, RTC_DateTypeDef *rtc_date, RTC_TimeTypeDef *rtc_time){
-        struct tm datetime0 = {0};
-        datetime0.tm_year = 1970;
-        datetime0.tm_mon = 0;
-        datetime0.tm_mday = 0;
-        datetime0.tm_hour = 0;
-        datetime0.tm_min = 0;
-        datetime0.tm_sec = 0;
-        time_t bsOrigin = mktime(&datetime0);
-
-
         struct tm datetime = {0};
         //not Y2.1K compliant:
         datetime.tm_year = rtc_date->Year + 2000;
@@ -185,13 +175,7 @@ void LocalDateTimeToSNTP(SNTP_Timestamp *sntp_time, RTC_DateTypeDef *rtc_date, R
         datetime.tm_sec = rtc_time->Seconds;
         time_t unixDate = mktime(&datetime) - TIME_H_DIFF;
         sntp_time->seconds = unixDate + SNTP_UNIX_TIMESTAMP_DIFF;
-        // sntp_time->seconds_fraction = rtc_time->SubSeconds << (32 - SNTP_SECONDS_FRACTION_SHIFT);
-        printf("unix time %lu\r\n", sizeof(unixDate));
-
-        struct tm datetime2;
-        localtime_r(&unixDate, &datetime2);
-        printf("date %d-%d-%d %d:%d:%d\r\n", datetime.tm_mday, datetime.tm_mon, datetime.tm_year, datetime.tm_hour, datetime.tm_min, datetime.tm_sec);
-        printf("converted date %d-%d-%d %d:%d:%d\r\n", datetime2.tm_mday, datetime2.tm_mon, datetime2.tm_year, datetime2.tm_hour, datetime2.tm_min, datetime2.tm_sec);
+        sntp_time->seconds_fraction = (255 - rtc_time->SubSeconds) << 24;
 }
 
 void SNTP_Timestamps_Add(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
@@ -217,8 +201,7 @@ void SNTP_Timestamps_Subtract(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
 void Sync(struct netconn* conn) {
         SNTP_Timestamp sntp_time, rtc_time = {0};
         uint32_t sntp_subseconds;
-        uint32_t sntp_subseconds_day, rtc_subseconds_day;
-        int32_t shift;
+        int32_t seconds_fractions_diff, seconds_diff, shift;
         RTC_DateTypeDef rtc_date_in_rtc_format;
         RTC_TimeTypeDef rtc_time_in_rtc_format;
 
@@ -226,30 +209,20 @@ void Sync(struct netconn* conn) {
         HAL_RTC_GetTime(&hrtc, &rtc_time_in_rtc_format, RTC_FORMAT_BIN);
         HAL_RTC_GetDate(&hrtc, &rtc_date_in_rtc_format, RTC_FORMAT_BIN);
         LocalDateTimeToSNTP(&rtc_time, &rtc_date_in_rtc_format, &rtc_time_in_rtc_format);
-        // SNTP_Timestamps_Subtract(&sntp_time, &rtc_time);
 
         //delete lateor
         printf("SNTP: %lu %lu\r\n", sntp_time.seconds, sntp_time.seconds_fraction);
         printf("RTC: %lu %lu\r\n", rtc_time.seconds, rtc_time.seconds_fraction);
-        printf("Diff: %lu %lu\r\n", sntp_time.seconds - rtc_time.seconds, sntp_time.seconds_fraction - rtc_time.seconds_fraction);
-
         
+        seconds_fractions_diff = (sntp_time.seconds_fraction >> (32 - SNTP_SECONDS_FRACTION_SHIFT)) - (rtc_time.seconds_fraction >> (32 - SNTP_SECONDS_FRACTION_SHIFT));
+        seconds_diff = sntp_time.seconds - rtc_time.seconds;
+        shift = seconds_fractions_diff + (seconds_diff << SNTP_SECONDS_FRACTION_SHIFT);
 
-        // rtc_subseconds_day = rtc_time.SubSeconds
-        //         + rtc_time.Seconds * SUBSECONDS_PER_SECOND 
-        //         + rtc_time.Minutes * SUBSECONDS_PER_SECOND * 60
-        //         + rtc_time.Hours * SUBSECONDS_PER_SECOND * 60 * 60;
+        printf("Shift: %li\r\n", shift);
 
-        // sntp_subseconds_day = sntp_subseconds
-        //         + (sntp_time.seconds % (60 * 60 * 24)) * SUBSECONDS_PER_SECOND;
-
-        // shift = sntp_subseconds_day - rtc_subseconds_day;
-
-        // if (shift > 0) {
-        //         HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, SUBSECONDS_PER_SECOND - shift);
-        // } else if (shift < 0) {
-        //         HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, -shift);
-        // }
-
-        // debug_only(printf("%li %li %li\r\n", sntp_subseconds, rtc_time.SubSeconds, shift));
+        if (shift > 0) {
+                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, SUBSECONDS_PER_SECOND - shift);
+        } else if (shift < 0) {
+                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, -shift);
+        }
 }
