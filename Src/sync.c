@@ -200,14 +200,18 @@ int32_t CalculateClockOffset(SNTP_Timestamp *originate_timestamp, SNTP_Timestamp
         printf("t4 = %lu %lu\r\n", destination_timestamp->seconds, destination_timestamp->seconds_fraction);
         printf("%lu %lu %lu %lu\r\n", T1, T2, T3, T4);
 
-        int32_t request_delay = T2 - T1;
-        int32_t response_delay = T3 - T4;
+        int32_t request_offset = T2 - T1;
+        int32_t response_offset = T3 - T4;
         // printf("%i %i\r\n", request_delay, response_delay);
 
-        int32_t avg_delay = (request_delay + response_delay) / 2;
-        // printf("%i\r\n", avg_delay);
+        int32_t avg_offset = (request_offset + response_offset) / 2;
+        printf("%i\r\n", avg_offset);
 
-        return avg_delay;
+        int32_t roundtrip = (T4 - T1) - (T3 - T2);
+        printf("%i %i %i\r\n", (int32_t) (T4) -  (int32_t) (T1), T3 - T2, roundtrip);
+
+
+        return avg_offset;
 }
 
 void SetRTCTime(SNTP_Timestamp *timestamp) {
@@ -249,8 +253,8 @@ void LocalDateTimeToSNTP(SNTP_Timestamp *sntp_time, RTC_DateTypeDef *rtc_date, R
         datetime.tm_sec = rtc_time->Seconds;
         time_t unixDate = mktime(&datetime) - TIME_H_DIFF;
         sntp_time->seconds = unixDate + SNTP_UNIX_TIMESTAMP_DIFF;
-        // sntp_time->seconds_fraction = (255 - rtc_time->SubSeconds) << 24;
-        sntp_time->seconds_fraction = rtc_time->SubSeconds << 24;
+        sntp_time->seconds_fraction = (255 - rtc_time->SubSeconds) << 24;
+        // sntp_time->seconds_fraction = rtc_time->SubSeconds << 24;
 }
 
 void SNTP_Timestamps_Add(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
@@ -280,11 +284,11 @@ void Sync(struct netconn* conn) {
 
         printf("Shift: %li\r\n", shift);
 
-        if (shift > 0) {
-                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, SUBSECONDS_PER_SECOND - shift);
-        } else if (shift < 0) {
-                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, -shift);
-        }
+        // if (shift > 0) {
+        //         HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, (uint32_t) (SUBSECONDS_PER_SECOND - shift));
+        // } else if (shift < 0) {
+        //         HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, (uint32_t)(0 - shift));
+        // }
 }
 
 void GetRTCTimeInSNTPFormat(SNTP_Timestamp* timestamp) {
