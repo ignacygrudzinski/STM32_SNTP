@@ -9,10 +9,11 @@
 #include <stm32f4xx_hal_rtc.h>
 
 #include <time.h>
+#include <stdbool.h>
 #include "sync.h"
 #include "signaling_diode.h"
 
-#define SNTP_ADDR "192.168.0.88"
+#define SNTP_ADDR "192.168.0.87"
 #define SNTP_PORT 123
 
 SemaphoreHandle_t connectionEnableSemaphore;
@@ -51,9 +52,11 @@ void SY_TaskFunc(void *param){
                 if (xSemaphoreTake(syncSemaphore, 100) == pdTRUE)
                 {
                         Sync(conn);
-                        // debug_only(PrintCurrentTime());
+                        debug_only(PrintCurrentTime());
+                        osDelay(100);
 
                 }
+                osDelay(100);
                 debug_only(PrintCurrentTime());
         }
 }
@@ -93,7 +96,9 @@ void SNTP_TimestampToSubSeconds(SNTP_Timestamp *timestamp, uint32_t *subseconds)
 
 void SNTP_TimestampToDate(SNTP_Timestamp *timestamp, RTC_DateTypeDef *rtc_date) {
         struct tm datetime;
-        time_t seconds_time_t = timestamp->seconds - SNTP_UNIX_TIMESTAMP_DIFF + TIME_H_DIFF;
+        time_t seconds_time_t;
+
+        seconds_time_t = timestamp->seconds - SNTP_UNIX_TIMESTAMP_DIFF + TIME_H_DIFF;
         localtime_r(&seconds_time_t, &datetime);
 
         debug_only(printf("yer: %d\r\n", datetime.tm_year));
@@ -110,7 +115,7 @@ int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn) {
         u16_t recv_size;
 
         sendbuf = netbuf_new();
-        client_sntp_frame.header = SNTP_MODE_CLIENT;
+        client_sntp_frame.header = SNTP_MODE_CLIENT | SNTP_VERSION_4;
         netbuf_ref(sendbuf, &client_sntp_frame, sizeof(client_sntp_frame));
 
         send_result = netconn_send(conn, sendbuf);
@@ -134,6 +139,75 @@ int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn) {
         netbuf_delete(sendbuf);
         netbuf_delete(recvbuf);
         return 0;
+}
+
+int32_t SNTP_GetDelay(struct netconn *conn) {
+        struct netbuf *sendbuf, *recvbuf;
+        SNTP_Frame client_sntp_frame = {0}, *server_sntp_frame;
+        int send_result, recv_result;
+        u16_t recv_size;
+        SNTP_Timestamp originate_timestamp, receive_timestamp, transmit_timestamp, destination_timestamp;
+
+
+        sendbuf = netbuf_new();
+        client_sntp_frame.header = SNTP_MODE_CLIENT | SNTP_VERSION_4;
+        netbuf_ref(sendbuf, &client_sntp_frame, sizeof(client_sntp_frame));
+
+        GetRTCTimeInSNTPFormat(&originate_timestamp);
+        client_sntp_frame.transit_timestamp.seconds = htonl(originate_timestamp.seconds);
+        client_sntp_frame.transit_timestamp.seconds_fraction = htonl(originate_timestamp.seconds_fraction);
+
+        send_result = netconn_send(conn, sendbuf);
+        if (send_result != ERR_OK) {
+                printf("aaa\r\n");
+                return -1;
+        } 
+        debug_only(printf("UDP message sent \r\n"));
+        // osDelay(100);
+
+        recv_result = netconn_recv(conn, &recvbuf);
+        if (recv_result != ERR_OK) {
+                return -1;
+        } 
+        debug_only(printf("UDP message recieved \r\n"));
+        netbuf_data(recvbuf, (void**) &server_sntp_frame, &recv_size);
+
+        receive_timestamp.seconds = ntohl(server_sntp_frame->receive_timestamp.seconds);
+        receive_timestamp.seconds_fraction = ntohl(server_sntp_frame->receive_timestamp.seconds_fraction);
+
+        transmit_timestamp.seconds = ntohl(server_sntp_frame->transit_timestamp.seconds);
+        transmit_timestamp.seconds_fraction = ntohl(server_sntp_frame->transit_timestamp.seconds_fraction);
+
+        netbuf_delete(sendbuf);
+        netbuf_delete(recvbuf);
+
+        GetRTCTimeInSNTPFormat(&destination_timestamp);
+
+        return CalculateClockOffset(&originate_timestamp, &receive_timestamp, &transmit_timestamp, &destination_timestamp);
+}
+
+
+#define TIMESTAMP_TO_OFFSET(timestamp) (timestamp->seconds << SNTP_SECONDS_FRACTION_SHIFT) + (timestamp->seconds_fraction >> (32 - SNTP_SECONDS_FRACTION_SHIFT))
+
+int32_t CalculateClockOffset(SNTP_Timestamp *originate_timestamp, SNTP_Timestamp *receive_timestamp, SNTP_Timestamp *transmit_timestamp, SNTP_Timestamp *destination_timestamp) {
+        uint32_t T1 = TIMESTAMP_TO_OFFSET(originate_timestamp);
+        uint32_t T2 = TIMESTAMP_TO_OFFSET(receive_timestamp);
+        uint32_t T3 = TIMESTAMP_TO_OFFSET(transmit_timestamp);
+        uint32_t T4 = TIMESTAMP_TO_OFFSET(destination_timestamp);
+        printf("t1 = %lu %lu\r\n", originate_timestamp->seconds, originate_timestamp->seconds_fraction);
+        printf("t2 = %lu %lu\r\n", receive_timestamp->seconds, receive_timestamp->seconds_fraction);
+        printf("t3 = %lu %lu\r\n", transmit_timestamp->seconds, transmit_timestamp->seconds_fraction);
+        printf("t4 = %lu %lu\r\n", destination_timestamp->seconds, destination_timestamp->seconds_fraction);
+        printf("%lu %lu %lu %lu\r\n", T1, T2, T3, T4);
+
+        int32_t request_delay = T2 - T1;
+        int32_t response_delay = T3 - T4;
+        // printf("%i %i\r\n", request_delay, response_delay);
+
+        int32_t avg_delay = (request_delay + response_delay) / 2;
+        // printf("%i\r\n", avg_delay);
+
+        return avg_delay;
 }
 
 void SetRTCTime(SNTP_Timestamp *timestamp) {
@@ -175,7 +249,8 @@ void LocalDateTimeToSNTP(SNTP_Timestamp *sntp_time, RTC_DateTypeDef *rtc_date, R
         datetime.tm_sec = rtc_time->Seconds;
         time_t unixDate = mktime(&datetime) - TIME_H_DIFF;
         sntp_time->seconds = unixDate + SNTP_UNIX_TIMESTAMP_DIFF;
-        sntp_time->seconds_fraction = (255 - rtc_time->SubSeconds) << 24;
+        // sntp_time->seconds_fraction = (255 - rtc_time->SubSeconds) << 24;
+        sntp_time->seconds_fraction = rtc_time->SubSeconds << 24;
 }
 
 void SNTP_Timestamps_Add(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
@@ -199,24 +274,9 @@ void SNTP_Timestamps_Subtract(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
 }
 
 void Sync(struct netconn* conn) {
-        SNTP_Timestamp sntp_time, rtc_time = {0};
-        uint32_t sntp_subseconds;
-        int32_t seconds_fractions_diff, seconds_diff, shift;
-        RTC_DateTypeDef rtc_date_in_rtc_format;
-        RTC_TimeTypeDef rtc_time_in_rtc_format;
+        int32_t shift;
 
-        SNTP_GetTime(&sntp_time, conn);
-        HAL_RTC_GetTime(&hrtc, &rtc_time_in_rtc_format, RTC_FORMAT_BIN);
-        HAL_RTC_GetDate(&hrtc, &rtc_date_in_rtc_format, RTC_FORMAT_BIN);
-        LocalDateTimeToSNTP(&rtc_time, &rtc_date_in_rtc_format, &rtc_time_in_rtc_format);
-
-        //delete lateor
-        printf("SNTP: %lu %lu\r\n", sntp_time.seconds, sntp_time.seconds_fraction);
-        printf("RTC: %lu %lu\r\n", rtc_time.seconds, rtc_time.seconds_fraction);
-        
-        seconds_fractions_diff = (sntp_time.seconds_fraction >> (32 - SNTP_SECONDS_FRACTION_SHIFT)) - (rtc_time.seconds_fraction >> (32 - SNTP_SECONDS_FRACTION_SHIFT));
-        seconds_diff = sntp_time.seconds - rtc_time.seconds;
-        shift = seconds_fractions_diff + (seconds_diff << SNTP_SECONDS_FRACTION_SHIFT);
+        shift = SNTP_GetDelay(conn);
 
         printf("Shift: %li\r\n", shift);
 
@@ -225,4 +285,13 @@ void Sync(struct netconn* conn) {
         } else if (shift < 0) {
                 HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, -shift);
         }
+}
+
+void GetRTCTimeInSNTPFormat(SNTP_Timestamp* timestamp) {
+        RTC_DateTypeDef rtc_date_in_rtc_format;
+        RTC_TimeTypeDef rtc_time_in_rtc_format;
+
+        HAL_RTC_GetTime(&hrtc, &rtc_time_in_rtc_format, RTC_FORMAT_BIN);
+        HAL_RTC_GetDate(&hrtc, &rtc_date_in_rtc_format, RTC_FORMAT_BIN);
+        LocalDateTimeToSNTP(timestamp, &rtc_date_in_rtc_format, &rtc_time_in_rtc_format);
 }
