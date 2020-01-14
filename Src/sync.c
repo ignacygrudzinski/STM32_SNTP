@@ -12,9 +12,7 @@
 #include <stdbool.h>
 #include "sync.h"
 #include "signaling_diode.h"
-
-#define SNTP_ADDR "192.168.0.87"
-#define SNTP_PORT 123
+#include "config.h"
 
 SemaphoreHandle_t connectionEnableSemaphore;
 SemaphoreHandle_t syncSemaphore;
@@ -53,8 +51,6 @@ void SY_TaskFunc(void *param){
                 {
                         Sync(conn);
                         debug_only(PrintCurrentTime());
-                        osDelay(100);
-
                 }
                 osDelay(100);
                 debug_only(PrintCurrentTime());
@@ -254,7 +250,6 @@ void LocalDateTimeToSNTP(SNTP_Timestamp *sntp_time, RTC_DateTypeDef *rtc_date, R
         time_t unixDate = mktime(&datetime) - TIME_H_DIFF;
         sntp_time->seconds = unixDate + SNTP_UNIX_TIMESTAMP_DIFF;
         sntp_time->seconds_fraction = (255 - rtc_time->SubSeconds) << 24;
-        // sntp_time->seconds_fraction = rtc_time->SubSeconds << 24;
 }
 
 void SNTP_Timestamps_Add(SNTP_Timestamp* op1, SNTP_Timestamp* op2) {
@@ -284,11 +279,16 @@ void Sync(struct netconn* conn) {
 
         printf("Shift: %li\r\n", shift);
 
-        // if (shift > 0) {
-        //         HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, (uint32_t) (SUBSECONDS_PER_SECOND - shift));
-        // } else if (shift < 0) {
-        //         HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, (uint32_t)(0 - shift));
-        // }
+        uint32_t rtc_shift = 0;
+
+        if (shift > 0) {
+                rtc_shift = (uint32_t) (SUBSECONDS_PER_SECOND - shift);
+                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, rtc_shift);
+        } else if (shift < 0) {
+                rtc_shift = (uint32_t) (0 - shift);
+                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, rtc_shift);
+        }
+        printf("Shhift: %lu\r\n", rtc_shift);
 }
 
 void GetRTCTimeInSNTPFormat(SNTP_Timestamp* timestamp) {
@@ -299,3 +299,6 @@ void GetRTCTimeInSNTPFormat(SNTP_Timestamp* timestamp) {
         HAL_RTC_GetDate(&hrtc, &rtc_date_in_rtc_format, RTC_FORMAT_BIN);
         LocalDateTimeToSNTP(timestamp, &rtc_date_in_rtc_format, &rtc_time_in_rtc_format);
 }
+//upośledzony - 33
+//1 -         -70
+//

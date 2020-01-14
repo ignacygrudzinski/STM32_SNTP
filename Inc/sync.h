@@ -46,7 +46,7 @@ typedef struct {
 
 
 #define SNTP_SECONDS_FRACTION_SHIFT 8
-#define SUBSECONDS_PER_SECOND (2 << SNTP_SECONDS_FRACTION_SHIFT)
+#define SUBSECONDS_PER_SECOND (2 << (SNTP_SECONDS_FRACTION_SHIFT - 1))
 
 // SNTP functions -> sntp.h
 
