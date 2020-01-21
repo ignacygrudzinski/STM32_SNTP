@@ -1,6 +1,6 @@
 #MicroXplorer Configuration settings - do not modify
 ETH.IPParameters=MediaInterface,PHY_Name,PHY_Value,PhyAddress,MACAddr
-ETH.MACAddr=00\:80\:E1\:21\:37\:88
+ETH.MACAddr=00\:80\:E1\:21\:37\:14
 ETH.MediaInterface=ETH_MEDIA_INTERFACE_RMII
 ETH.PHY_Name=LAN8742A_PHY_ADDRESS
 ETH.PHY_Value=0

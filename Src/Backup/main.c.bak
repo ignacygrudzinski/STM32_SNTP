@@ -118,6 +118,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   connectionEnableSemaphore = xSemaphoreCreateBinary();
+  syncSemaphore = xSemaphoreCreateBinary();
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
 

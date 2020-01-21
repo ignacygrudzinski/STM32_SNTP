@@ -1,7 +1,7 @@
 [PreviousGenFiles]
-HeaderPath=/Users/ignacy/embed_lab/embed_lab/Inc
+HeaderPath=/Users/miroslawblazej/embed_lab/Inc
 HeaderFiles=FreeRTOSConfig.h;lwip.h;lwipopts.h;ethernetif.h;stm32f4xx_it.h;stm32f4xx_hal_conf.h;main.h;
-SourcePath=/Users/ignacy/embed_lab/embed_lab/Src
+SourcePath=/Users/miroslawblazej/embed_lab/Src
 SourceFiles=freertos.c;lwip.c;ethernetif.c;stm32f4xx_it.c;stm32f4xx_hal_msp.c;stm32f4xx_hal_timebase_tim.c;main.c;
 
 [PreviousLibFiles]

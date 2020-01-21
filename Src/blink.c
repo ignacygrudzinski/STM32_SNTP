@@ -13,5 +13,4 @@
 void HAL_RTC_AlarmAEventCallback (RTC_HandleTypeDef * hrtc) {
         // WARINING: function called from alarm handler
         HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
-
 }

@@ -42,9 +42,8 @@ void SY_TaskFunc(void *param){
         struct netconn* conn;
         Connect(&conn);
         SD_SetState(CONNECTED);
-
         SetRemoteTime(conn);
-        PrintCurrentTime();
+        debug_only(PrintCurrentTime());
 
         while (1) {
                 if (xSemaphoreTake(syncSemaphore, 100) == pdTRUE)
@@ -52,7 +51,7 @@ void SY_TaskFunc(void *param){
                         Sync(conn);
                         debug_only(PrintCurrentTime());
                 }
-                osDelay(100);
+                debug_only(osDelay(100));
                 debug_only(PrintCurrentTime());
         }
 }
@@ -104,7 +103,7 @@ void SNTP_TimestampToDate(SNTP_Timestamp *timestamp, RTC_DateTypeDef *rtc_date) 
         rtc_date->Year = datetime.tm_year % 100;
 }
 
-int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn) {
+int SNTP_GetServerTime(SNTP_Timestamp *receive_timestamp, SNTP_Timestamp *transmit_timestamp, SNTP_Timestamp *originate_timestamp, struct netconn* conn) {
         struct netbuf *sendbuf, *recvbuf;
         SNTP_Frame client_sntp_frame = {0}, *server_sntp_frame;
         int send_result, recv_result;
@@ -114,13 +113,17 @@ int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn) {
         client_sntp_frame.header = SNTP_MODE_CLIENT | SNTP_VERSION_4;
         netbuf_ref(sendbuf, &client_sntp_frame, sizeof(client_sntp_frame));
 
+        if (originate_timestamp != NULL) {
+                GetRTCTimeInSNTPFormat(originate_timestamp);
+                client_sntp_frame.transit_timestamp.seconds = htonl(originate_timestamp->seconds);
+                client_sntp_frame.transit_timestamp.seconds_fraction = htonl(originate_timestamp->seconds_fraction);
+        }
+
         send_result = netconn_send(conn, sendbuf);
         if (send_result != ERR_OK) {
-                printf("aaa\r\n");
                 return -1;
         } 
         debug_only(printf("UDP message sent \r\n"));
-        // osDelay(100);
 
         recv_result = netconn_recv(conn, &recvbuf);
         if (recv_result != ERR_OK) {
@@ -129,56 +132,29 @@ int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn) {
         debug_only(printf("UDP message recieved \r\n"));
         netbuf_data(recvbuf, (void**) &server_sntp_frame, &recv_size);
 
-        currentTimestamp->seconds = ntohl(server_sntp_frame->receive_timestamp.seconds);
-        currentTimestamp->seconds_fraction = ntohl(server_sntp_frame->receive_timestamp.seconds_fraction);
+        if (receive_timestamp != NULL) {
+                receive_timestamp->seconds = ntohl(server_sntp_frame->receive_timestamp.seconds);
+                receive_timestamp->seconds_fraction = ntohl(server_sntp_frame->receive_timestamp.seconds_fraction);
+        }
 
+        if (transmit_timestamp != NULL) {
+                transmit_timestamp->seconds = ntohl(server_sntp_frame->transit_timestamp.seconds);
+                transmit_timestamp->seconds_fraction = ntohl(server_sntp_frame->transit_timestamp.seconds_fraction);
+        }
         netbuf_delete(sendbuf);
         netbuf_delete(recvbuf);
         return 0;
 }
 
+int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn) {
+        return SNTP_GetServerTime(NULL, currentTimestamp, NULL, conn);
+}
+
 int32_t SNTP_GetDelay(struct netconn *conn) {
-        struct netbuf *sendbuf, *recvbuf;
-        SNTP_Frame client_sntp_frame = {0}, *server_sntp_frame;
-        int send_result, recv_result;
-        u16_t recv_size;
         SNTP_Timestamp originate_timestamp, receive_timestamp, transmit_timestamp, destination_timestamp;
 
-
-        sendbuf = netbuf_new();
-        client_sntp_frame.header = SNTP_MODE_CLIENT | SNTP_VERSION_4;
-        netbuf_ref(sendbuf, &client_sntp_frame, sizeof(client_sntp_frame));
-
-        GetRTCTimeInSNTPFormat(&originate_timestamp);
-        client_sntp_frame.transit_timestamp.seconds = htonl(originate_timestamp.seconds);
-        client_sntp_frame.transit_timestamp.seconds_fraction = htonl(originate_timestamp.seconds_fraction);
-
-        send_result = netconn_send(conn, sendbuf);
-        if (send_result != ERR_OK) {
-                printf("aaa\r\n");
-                return -1;
-        } 
-        debug_only(printf("UDP message sent \r\n"));
-        // osDelay(100);
-
-        recv_result = netconn_recv(conn, &recvbuf);
-        if (recv_result != ERR_OK) {
-                return -1;
-        } 
-        debug_only(printf("UDP message recieved \r\n"));
-        netbuf_data(recvbuf, (void**) &server_sntp_frame, &recv_size);
-
-        receive_timestamp.seconds = ntohl(server_sntp_frame->receive_timestamp.seconds);
-        receive_timestamp.seconds_fraction = ntohl(server_sntp_frame->receive_timestamp.seconds_fraction);
-
-        transmit_timestamp.seconds = ntohl(server_sntp_frame->transit_timestamp.seconds);
-        transmit_timestamp.seconds_fraction = ntohl(server_sntp_frame->transit_timestamp.seconds_fraction);
-
-        netbuf_delete(sendbuf);
-        netbuf_delete(recvbuf);
-
+        SNTP_GetServerTime(&receive_timestamp, &transmit_timestamp, &originate_timestamp, conn);
         GetRTCTimeInSNTPFormat(&destination_timestamp);
-
         return CalculateClockOffset(&originate_timestamp, &receive_timestamp, &transmit_timestamp, &destination_timestamp);
 }
 
@@ -190,21 +166,20 @@ int32_t CalculateClockOffset(SNTP_Timestamp *originate_timestamp, SNTP_Timestamp
         uint32_t T2 = TIMESTAMP_TO_OFFSET(receive_timestamp);
         uint32_t T3 = TIMESTAMP_TO_OFFSET(transmit_timestamp);
         uint32_t T4 = TIMESTAMP_TO_OFFSET(destination_timestamp);
-        printf("t1 = %lu %lu\r\n", originate_timestamp->seconds, originate_timestamp->seconds_fraction);
-        printf("t2 = %lu %lu\r\n", receive_timestamp->seconds, receive_timestamp->seconds_fraction);
-        printf("t3 = %lu %lu\r\n", transmit_timestamp->seconds, transmit_timestamp->seconds_fraction);
-        printf("t4 = %lu %lu\r\n", destination_timestamp->seconds, destination_timestamp->seconds_fraction);
-        printf("%lu %lu %lu %lu\r\n", T1, T2, T3, T4);
+        debug_only(printf("t1 = %lu %lu\r\n", originate_timestamp->seconds, originate_timestamp->seconds_fraction));
+        debug_only(printf("t2 = %lu %lu\r\n", receive_timestamp->seconds, receive_timestamp->seconds_fraction));
+        debug_only(printf("t3 = %lu %lu\r\n", transmit_timestamp->seconds, transmit_timestamp->seconds_fraction));
+        debug_only(printf("t4 = %lu %lu\r\n", destination_timestamp->seconds, destination_timestamp->seconds_fraction));
+        debug_only(printf("%lu %lu %lu %lu\r\n", T1, T2, T3, T4));
 
         int32_t request_offset = T2 - T1;
         int32_t response_offset = T3 - T4;
-        // printf("%i %i\r\n", request_delay, response_delay);
 
         int32_t avg_offset = (request_offset + response_offset) / 2;
-        printf("%i\r\n", avg_offset);
+        debug_only(printf("%i\r\n", avg_offset));
 
         int32_t roundtrip = (T4 - T1) - (T3 - T2);
-        printf("%i %i %i\r\n", (int32_t) (T4) -  (int32_t) (T1), T3 - T2, roundtrip);
+        debug_only(printf("%i %i %i\r\n", (int32_t) (T4) -  (int32_t) (T1), T3 - T2, roundtrip));
 
 
         return avg_offset;
@@ -235,7 +210,7 @@ void PrintCurrentTime() {
         HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
         HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
         
-        printf("%d-%d-%d %d:%d:%d %ld %ld \r\n", date.Date, date.Month, date.Year, time.Hours, time.Minutes, time.Seconds, time.SubSeconds, time.SecondFraction);
+        debug_only(printf("%d-%d-%d %d:%d:%d %ld %ld \r\n", date.Date, date.Month, date.Year, time.Hours, time.Minutes, time.Seconds, time.SubSeconds, time.SecondFraction));
 }
 
 void LocalDateTimeToSNTP(SNTP_Timestamp *sntp_time, RTC_DateTypeDef *rtc_date, RTC_TimeTypeDef *rtc_time){
@@ -277,18 +252,22 @@ void Sync(struct netconn* conn) {
 
         shift = SNTP_GetDelay(conn);
 
-        printf("Shift: %li\r\n", shift);
+        debug_only(printf("Shift: %li\r\n", shift));
 
-        uint32_t rtc_shift = 0;
 
-        if (shift > 0) {
-                rtc_shift = (uint32_t) (SUBSECONDS_PER_SECOND - shift);
-                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, rtc_shift);
-        } else if (shift < 0) {
-                rtc_shift = (uint32_t) (0 - shift);
-                HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, rtc_shift);
+        if (shift > 255 || shift < -255) {
+                SetRemoteTime(conn);
+        } else {
+                uint32_t rtc_shift = 0;
+                if (shift > 0) {
+                        rtc_shift = (uint32_t) (SUBSECONDS_PER_SECOND - shift);
+                        HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_SET, rtc_shift);
+                } else if (shift < 0) {
+                        rtc_shift = (uint32_t) (0 - shift);
+                        HAL_RTCEx_SetSynchroShift(&hrtc, RTC_SHIFTADD1S_RESET, rtc_shift);
+                }
+                debug_only(printf("RTC sif: %lu\r\n", rtc_shift));
         }
-        printf("Shhift: %lu\r\n", rtc_shift);
 }
 
 void GetRTCTimeInSNTPFormat(SNTP_Timestamp* timestamp) {
@@ -299,6 +278,3 @@ void GetRTCTimeInSNTPFormat(SNTP_Timestamp* timestamp) {
         HAL_RTC_GetDate(&hrtc, &rtc_date_in_rtc_format, RTC_FORMAT_BIN);
         LocalDateTimeToSNTP(timestamp, &rtc_date_in_rtc_format, &rtc_time_in_rtc_format);
 }
-//upośledzony - 33
-//1 -         -70
-//

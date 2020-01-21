@@ -2,10 +2,10 @@
 #define __SYNC_H
 
 #include "semphr.h"
+#include "config.h"
 
 #define SY_TASK "SYNC_TASK"
 
-#define DEBUG
 #ifdef DEBUG
         #define debug_only(command) command;
 #else
@@ -44,13 +44,13 @@ typedef struct {
 #define TIME_H_DIFF 59958144000
 #define SNTP_UNIX_TIMESTAMP_DIFF 2208988800UL
 
-
 #define SNTP_SECONDS_FRACTION_SHIFT 8
 #define SUBSECONDS_PER_SECOND (2 << (SNTP_SECONDS_FRACTION_SHIFT - 1))
 
 // SNTP functions -> sntp.h
 
 int Connect(struct netconn **conn);
+int SNTP_GetServerTime(SNTP_Timestamp *receive_timestamp, SNTP_Timestamp *transmit_timestamp, SNTP_Timestamp *originate_timestamp, struct netconn* conn);
 int SNTP_GetTime(SNTP_Timestamp *currentTimestamp, struct netconn *conn);
 int32_t SNTP_GetDelay(struct netconn *conn);
 int32_t CalculateClockOffset(SNTP_Timestamp *originate_timestamp, SNTP_Timestamp *receive_timestamp, SNTP_Timestamp *transmit_timestamp, SNTP_Timestamp *destination_timestamp);

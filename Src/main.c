@@ -462,11 +462,9 @@ void StartDefaultTask(void *argument)
 
   struct dhcp *dhcp = netif_dhcp_data(&gnetif);
   do {
-    // printf("dhcp->state = %02X\r\n",dhcp->state);
     vTaskDelay(250);
   } while (dhcp->state != 0x0A);
 
-  // printf("DHCP bound\r\n");
   xSemaphoreGive(connectionEnableSemaphore);
   /* Infinite loop */
   for(;;)
