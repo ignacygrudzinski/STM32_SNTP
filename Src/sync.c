@@ -257,6 +257,7 @@ void Sync(struct netconn* conn) {
 
         if (shift > 255 || shift < -255) {
                 SetRemoteTime(conn);
+                Sync(conn);
         } else {
                 uint32_t rtc_shift = 0;
                 if (shift > 0) {
